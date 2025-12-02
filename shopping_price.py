@@ -1,12 +1,13 @@
 import streamlit as st
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt
 from io import BytesIO
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag
+import random
 
-# Ensure NLTK downloads
+# NLTK downloads
 nltk.download("punkt")
 nltk.download("averaged_perceptron_tagger")
 
@@ -22,12 +23,10 @@ POS_GROUPS = {
 def should_blank(pos, selected_group):
     if selected_group == "전체":
         return True
-    if selected_group in POS_GROUPS:
-        return pos in POS_GROUPS[selected_group]
-    return False
+    return pos in POS_GROUPS[selected_group]
 
 
-def generate_test_and_answer(text, pos_group):
+def generate_test_and_answer(text, pos_group, blank_ratio):
     tokens = word_tokenize(text)
     tagged = pos_tag(tokens)
 
@@ -36,12 +35,15 @@ def generate_test_and_answer(text, pos_group):
     output_words = []
 
     for word, pos in tagged:
+        # 품사 조건 + 비율 조건 + 알파벳 단어만
         if should_blank(pos, pos_group) and word.isalpha():
-            blank_count += 1
-            blanks[blank_count] = word
-            output_words.append(f"({blank_count}) ______")
-        else:
-            output_words.append(word)
+            if random.random() < blank_ratio:
+                blank_count += 1
+                blanks[blank_count] = word
+                output_words.append(f"({blank_count}) ______")
+                continue
+
+        output_words.append(word)
 
     test_text = " ".join(output_words)
     return test_text, blanks
@@ -50,11 +52,11 @@ def generate_test_and_answer(text, pos_group):
 def create_docx(test_text, blanks):
     doc = Document()
 
-    # --- 시험지 헤더 디자인 ---
+    # ---------------- 시험지 헤더 ----------------
     table = doc.add_table(rows=2, cols=4)
     table.style = "Table Grid"
-
     headers = ["반", "이름", "점수", "선생님 확인"]
+
     for i, h in enumerate(headers):
         cell = table.cell(0, i)
         cell.text = h
@@ -63,30 +65,35 @@ def create_docx(test_text, blanks):
                 run.font.bold = True
                 run.font.size = Pt(12)
 
-    for i in range(4):
-        table.cell(1, i).text = ""
-
     doc.add_paragraph("\n")  # spacing
 
-    # 본문 문제
+    # ---------------- 본문 문제 ----------------
     p = doc.add_paragraph(test_text)
     for run in p.runs:
         run.font.size = Pt(12)
 
-    # --- 정답지 페이지 ---
+    # ---------------- 정답지 ----------------
     doc.add_page_break()
     doc.add_heading("정답지", level=1)
 
-    keys = list(blanks.keys())
-    col_len = len(keys) // 3 + 1
-    rows = [keys[i:i + col_len] for i in range(0, len(keys), col_len)]
+    numbers = list(blanks.keys())
+    total = len(numbers)
 
-    answers_table = doc.add_table(rows=len(rows), cols=len(rows[0]))
-    answers_table.style = "Table Grid"
+    # 3열로 나누되, 번호는 "세로 방향"으로 진행하도록
+    col_count = 3
+    row_count = (total + col_count - 1) // col_count
 
-    for r_idx, row_keys in enumerate(rows):
-        for c_idx, k in enumerate(row_keys):
-            answers_table.cell(r_idx, c_idx).text = f"{k}. {blanks[k]}"
+    # 세로 정렬 구조
+    table = doc.add_table(rows=row_count, cols=col_count)
+    table.style = "Table Grid"
+
+    index = 1
+    for col in range(col_count):
+        for row in range(row_count):
+            if index <= total:
+                key = index
+                table.cell(row, col).text = f"{key}. {blanks[key]}"
+            index += 1
 
     buf = BytesIO()
     doc.save(buf)
@@ -96,20 +103,20 @@ def create_docx(test_text, blanks):
 
 # ---------------- Streamlit UI ----------------
 st.title("📘 연세영어학원 자동 빈칸 출제기")
-st.write("업로드한 Word 파일(docx)에서 특정 품사만 골라 자동으로 빈칸 문제 + 정답지를 만들어줍니다.")
 
 uploaded = st.file_uploader("Word 파일 업로드", type=["docx"])
+
 pos_group = st.selectbox("빈칸으로 만들 품사 선택", ["전체", "동사", "명사", "형용사", "부사"])
+
+blank_ratio = st.slider("빈칸 생성 비율 (%)", 5, 80, 20)
+blank_ratio = blank_ratio / 100
 
 if uploaded:
     if st.button("시험지 생성하기"):
         doc = Document(uploaded)
+        full_text = "\n".join([p.text for p in doc.paragraphs])
 
-        full_text = ""
-        for para in doc.paragraphs:
-            full_text += para.text + "\n"
-
-        test_text, blanks = generate_test_and_answer(full_text, pos_group)
+        test_text, blanks = generate_test_and_answer(full_text, pos_group, blank_ratio)
         output = create_docx(test_text, blanks)
 
         st.success("시험지 생성 완료!")
