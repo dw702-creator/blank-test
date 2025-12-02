@@ -7,6 +7,7 @@ from nltk import pos_tag, word_tokenize
 import random
 import re
 import math
+import os
 
 # ---------- NLTK data ----------
 try:
@@ -167,11 +168,17 @@ if uploaded_file is not None:
         try:
             uploaded_file.seek(0)
             out = process_docx_with_answer(uploaded_file, pos_choice, blank_pct / 100.0)
-            st.success("시험지가 생성되었습니다. 아래 버튼으로 다운로드하세요.")
+            st.success("시험지가 생성되었습니다.")
+
+            # 파일 이름 자동 생성
+            original_name = uploaded_file.name
+            base_name = os.path.splitext(original_name)[0]
+            final_file_name = f"{base_name}_빈칸시험지+답지.docx"
+
             st.download_button(
                 label="⬇️ 시험지(.docx) 다운로드 (문제 + 정답지 포함)",
                 data=out,
-                file_name="blank_test_with_answer.docx",
+                file_name=final_file_name,
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         except Exception as e:
