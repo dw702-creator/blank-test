@@ -1,8 +1,6 @@
 import streamlit as st
 from docx import Document
 from docx.shared import Pt, Inches
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
 from io import BytesIO
 import nltk
 from nltk import pos_tag, word_tokenize
@@ -50,75 +48,34 @@ def assemble_tokens(tokens):
             out += " " + t
     return out
 
-def set_paragraph_border(paragraph):
-    p = paragraph._p
-    pPr = p.get_or_add_pPr()
-    existing = pPr.find(qn('w:pBdr'))
-    if existing is not None:
-        pPr.remove(existing)
-    pBdr = OxmlElement('w:pBdr')
-    for border_name in ['top', 'left', 'bottom', 'right']:
-        border = OxmlElement(f'w:{border_name}')
-        border.set(qn('w:val'), 'single')
-        border.set(qn('w:sz'), '4')
-        border.set(qn('w:space'), '4')
-        border.set(qn('w:color'), '000000')
-        pBdr.append(border)
-    pPr.append(pBdr)
-
 def set_runs_font(paragraph, size_pt=11, bold=False):
     for run in paragraph.runs:
         run.font.size = Pt(size_pt)
         run.font.bold = bold
 
-def set_cell_font(cell, size_pt=11, bold=False, center=True):
-    for p in cell.paragraphs:
-        for r in p.runs:
-            r.font.size = Pt(size_pt)
-            r.font.bold = bold
-        if center:
-            p.alignment = 1  # 가운데 정렬
-
 def process_docx_with_answer(file_like, pos_choice, blank_ratio_fraction):
     src = Document(file_like)
     dst = Document()
 
+    # 여백
     for section in dst.sections:
         section.top_margin = Inches(0.6)
         section.bottom_margin = Inches(0.6)
         section.left_margin = Inches(0.6)
         section.right_margin = Inches(0.6)
 
-    # ---------- 학원 이름 ----------
+    # ---------- 상단 학원 이름 ----------
     title_p = dst.add_paragraph("연세영어학원")
     set_runs_font(title_p, size_pt=18, bold=True)
     title_p.alignment = 1  # 가운데
+    dst.add_paragraph("")
 
-    dst.add_paragraph("")  # 간격
-
-    # ---------- 상단 반/이름/점수/선생님 확인 ----------
-    header = dst.add_table(rows=2, cols=4)
-    header.style = 'Table Grid'
-    header.autofit = True
-
-    # 첫 줄 라벨
-    header.cell(0,0).text = "반"
-    header.cell(0,1).text = ""
-    header.cell(0,2).text = "이름"
-    header.cell(0,3).text = ""
-
-    # 둘째 줄
-    header.cell(1,0).text = "점수"
-    header.cell(1,1).text = ""
-    header.cell(1,2).text = "선생님 확인"
-    header.cell(1,3).text = ""
-
-    # 폰트 & 가운데 정렬
-    for r in header.rows:
-        for c in r.cells:
-            set_cell_font(c, size_pt=11, bold=True)
-
-    dst.add_paragraph("")  # 간격
+    # ---------- 깔끔한 정보란 ----------
+    info_text = "반: ______       이름: ______       점수: ______       선생님 확인: ______"
+    info_p = dst.add_paragraph(info_text)
+    set_runs_font(info_p, size_pt=12, bold=False)
+    info_p.alignment = 1  # 가운데
+    dst.add_paragraph("")
 
     # ---------- 본문 문제 ----------
     answer_map = {}
@@ -167,7 +124,6 @@ def process_docx_with_answer(file_like, pos_choice, blank_ratio_fraction):
         para_text = assemble_tokens(out_tokens)
         p = dst.add_paragraph(para_text)
         set_runs_font(p, size_pt=11)
-        set_paragraph_border(p)
 
     # ---------- 정답지 ----------
     dst.add_page_break()
@@ -189,9 +145,6 @@ def process_docx_with_answer(file_like, pos_choice, blank_ratio_fraction):
                 cell = answers_table.cell(row, col)
                 if idx <= total_answers:
                     cell.text = f"{idx}. {answer_map[idx]}"
-                    set_cell_font(cell, size_pt=11)
-                else:
-                    cell.text = ""
 
     out = BytesIO()
     dst.save(out)
@@ -199,8 +152,8 @@ def process_docx_with_answer(file_like, pos_choice, blank_ratio_fraction):
     return out
 
 # ---------------- Streamlit UI ----------------
-st.set_page_config(page_title="연세영어학원 - 자동 빈칸 출제기", layout="wide")
-st.title("📘 연세영어학원 자동 빈칸 출제기")
+st.set_page_config(page_title="Blank Test Generator", layout="wide")
+st.title("📘 Blank Test Generator")
 st.markdown("업로드한 Word(.docx)에서 특정 품사만 선택하여 랜덤으로 빈칸을 생성하고, 마지막 페이지에 정답지를 자동으로 만들어 줍니다.")
 
 # 설정
